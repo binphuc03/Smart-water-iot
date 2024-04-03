@@ -1,12 +1,23 @@
 #include <DHT.h>
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
-#include <WiFi.h> // Thư viện ESP32 WiFi
-#include <FirebaseArduino.h>
-//#define FIREBASE_HOST "https://dead-94577-default-rtdb.asia-southeast1.firebasedatabase.app" //Thay bằng địa chỉ firebase 
-//#define FIREBASE_AUTH "dead-94577-default-rtdb.asia-southeast1.firebasedatabase.app"   
+#include <WiFi.h>
+#include <Firebase_ESP_Client.h>
+#include <BH1750.h>
+
+#define DATABASE_URL "https://smartwater-fe007-default-rtdb.asia-southeast1.firebasedatabase.app"  // the project name address from firebase id
+#define DATABASE_SECRET "c5d5bRuTW3b0EmhxYM13DOmyiYcUoFr5tOzwxweJ"          // the secret key generated from firebase
+#define API_KEY "AIzaSyDgtSgrRwTQxLC75wZ0QanIoSjtg40bgwI"
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 
+// Khởi tạo Firebase
+FirebaseConfig firebaseConfig;
+FirebaseAuth firebaseAuth;
+FirebaseData firebaseData;
+String path = "Noti/";
+bool signupOK = false;
+
+// DHT11 và cảm biến độ ẩm đất
 #define DHTPIN 15 
 #define DHTTYPE DHT11
 #define SOIL_MOISTURE_PIN A0 // Chân kết nối cảm biến độ ẩm đất
@@ -15,10 +26,10 @@ int LED[2] = {14, 12}; // Chân LED cho ESP32
 int relay = 13; // Chân relay cho ESP32
 unsigned long currentTime;
 unsigned long lastTime;
+BH1750 lightMeter;
 
-char auth[] = "84NFK0f7n6y24Je00XyseSXVyvmQuJKY";
-char ssid[] = "firebase";
-char password[] = "12345678";
+char ssid[] = "wifi";
+char password[] = "deni3194";
 
 DHT dht(DHTPIN, DHTTYPE);
 
@@ -26,16 +37,16 @@ void setup() {
   Serial.begin(115200);
   Wire.begin();
   lcd.init();
-  delay(100);
+  //delay(100);
   lcd.backlight();
   lcd.clear();
-
   dht.begin();
   pinMode(relay, OUTPUT);
   for (int i = 0; i < 2; i++) {
     pinMode(LED[i], OUTPUT);
     digitalWrite(LED[i], LOW);
   }
+  lightMeter.begin();
 
   // Kết nối với Wi-Fi
   WiFi.begin(ssid, password);
@@ -43,19 +54,20 @@ void setup() {
   Serial.print("Connecting to WiFi");
   while (WiFi.status() != WL_CONNECTED) {
     Serial.print(".");
-    delay(500);
+    delay(300);
   }
 
   Serial.println("\nWiFi connected");
   Serial.println("IP Address: " + WiFi.localIP().toString());
 
-  Firebase.begin(FIREBASE_HOST, FIREBASE_AUTH);
+  setupFirebase();
 }
 
 void loop() {
   float humidity = dht.readHumidity();
   float temperature = dht.readTemperature();
   float soilMoisture = analogRead(SOIL_MOISTURE_PIN);
+  float lux = lightMeter.readLightLevel();
 
   // Cập nhật dữ liệu đến Firebase (nếu cần)
   // ...
@@ -118,4 +130,15 @@ void lcdDisplay(float t, float h, float sm) {
   lcd.print("Do am dat: ");
   lcd.setCursor(12, 2);
   lcd.print(round(sm));
+}
+void setupFirebase() {
+  firebaseConfig.api_key = API_KEY;
+  firebaseConfig.database_url = DATABASE_URL;
+  if (Firebase.signUp(&firebaseConfig, &firebaseAuth, "", "")) {
+    signupOK = true;
+  } else {
+    Serial.printf("%s\n", firebaseConfig.signer.signupError.message.c_str());
+  }
+  Firebase.begin(&firebaseConfig, &firebaseAuth);
+  Firebase.reconnectWiFi(true);
 }
