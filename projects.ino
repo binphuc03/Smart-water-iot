@@ -4,14 +4,14 @@
 #include <WiFi.h>
 #include <Firebase_ESP_Client.h>
 #include <BH1750.h>
-#include <Ticker.h>
-
-
+#include <WiFiUdp.h>
+#include <NTPClient.h>
+#include <TimeLib.h>
 #define DATABASE_URL "https://smartwater-fe007-default-rtdb.asia-southeast1.firebasedatabase.app"  // the project name address from firebase id
 #define DATABASE_SECRET "c5d5bRuTW3b0EmhxYM13DOmyiYcUoFr5tOzwxweJ"                                 // the secret key generated from firebase
 #define API_KEY "AIzaSyDgtSgrRwTQxLC75wZ0QanIoSjtg40bgwI"
-int low_threshold=400;
-int high_threshold= 700;
+int low_threshold=40;
+int high_threshold= 70;
 //LiquidCrystal_I2C lcd(0x27, 16, 2);
 
 // Khởi tạo Firebase
@@ -36,11 +36,18 @@ float soilMoisture ;
 float lux ;
 BH1750 lightMeter;
 int T=0;   //thời gian tưới
-Ticker timer;
-char ssid[] = "k1enttt";
-char password[] = "tathuctrungkien";
+char ssid[] = "MANG DAY KTX H1-511";
+char password[] = "123456789a";
 
 DHT dht(DHTPIN, DHTTYPE);
+WiFiUDP ntpUDP;
+
+NTPClient timeClient(ntpUDP, "asia.pool.ntp.org", 25200, 60000);
+
+char Time[] = "TIME:00:00:00";
+char Date[] = "DATE:00/00/2000";
+byte last_second, second_, minute_, hour_, day_, month_;
+int year_;
 
 void setup() {
   Serial.begin(115200);
@@ -51,10 +58,6 @@ void setup() {
   lcd.clear();*/
   dht.begin();
   pinMode(relay, OUTPUT);
- /* for (int i = 0; i < 2; i++) {
-    pinMode(LED[i], OUTPUT);
-    digitalWrite(LED[i], LOW);
-  }*/
   lightMeter.begin();
 
   // Kết nối với Wi-Fi
@@ -70,8 +73,7 @@ void setup() {
   Serial.println("IP Address: " + WiFi.localIP().toString());
 
   setupFirebase();
-
-  timer.attach(300000, CollectData);
+  timeClient.begin();
 }
 
 void loop() {
@@ -80,43 +82,67 @@ void loop() {
   mode = firebaseData.to<int>();
   if (mode==1) automatic();
   else if (mode==2) handle();
-  Serial.println(mode);
-  /*currentTime = millis();
-  lcd.display();
-  if ((currentTime - lastTime) >= 1000) {
-    lcdDisplay(temperature, humidity, soilMoisture, lux);
-    lastTime = currentTime;
-  }*/
-  //delay(5000);
-}
-void automatic() 
-{ 
-  T = countT();CollectData();
-  Serial.println(soilMoisture);
-  if (T > 0)
+ // Serial.println(mode);
+ timeClient.update();
+  unsigned long unix_epoch = timeClient.getEpochTime();
+
+  second_ = second(unix_epoch);
+  if (last_second != second_)
   {
+
+    minute_ = minute(unix_epoch);
+    hour_ = hour(unix_epoch);
+    day_ = day(unix_epoch);
+    month_ = month(unix_epoch);
+    year_ = year(unix_epoch);
+
+    Time[12] = second_ % 10 + 48;
+    Time[11] = second_ / 10 + 48;
+    Time[9] = minute_ % 10 + 48;
+    Time[8] = minute_ / 10 + 48;
+    Time[6] = hour_ % 10 + 48;
+    Time[5] = hour_ / 10 + 48;
+
+    Date[5] = day_ / 10 + 48;
+    Date[6] = day_ % 10 + 48;
+    Date[8] = month_ / 10 + 48;
+    Date[9] = month_ % 10 + 48;
+    Date[13] = (year_ / 10) % 10 + 48;
+    Date[14] = year_ % 10 % 10 + 48;
+
+    Serial.println(Time);
+    Serial.println(Date);
+  }
+  delay(1000);
+ // lcd.display();
+}
+void automatic() {
+  CollectData();
+  T = countT();
+  if (T > 0) {
     digitalWrite(relay, HIGH);
     Firebase.RTDB.setBool(&firebaseData, path + "is_watered", true);
-  }
-  else
-  {
+  } else {
     digitalWrite(relay, LOW);
     Firebase.RTDB.setBool(&firebaseData, path + "is_watered", false);
   }
   delay(2000);
 }
-void handle()
-{
+
+void handle() {
+   CollectData();
   T = countT();
-  bool is_button = Firebase.RTDB.getBool(&firebaseData, path + "is_button");
-  if (is_button == true && T > 0) 
-  {
+ Firebase.RTDB.getBool(&firebaseData, path + "is_button");
+   bool check = firebaseData.to<bool>();
+  if (check == true && T > 0) {
     digitalWrite(relay, HIGH);
     Firebase.RTDB.setBool(&firebaseData, path + "is_watered", true);
-    delay(T*1000);
+  }
+  else {
     digitalWrite(relay, LOW);
     Firebase.RTDB.setBool(&firebaseData, path + "is_watered", false);
   }
+  delay(2000);
 }
 void CollectData() {
   humidity = dht.readHumidity();
@@ -124,16 +150,16 @@ void CollectData() {
 int value = analogRead(SOIL_MOISTURE_PIN);
 soilMoisture = map(value, 0, 4095, 100, 0);
   lux = lightMeter.readLightLevel();
-  if (!isnan(humidity) && !isnan(temperature) && !isnan(soilMoisture) && !isnan(lux)) {
+//  if (!isnan(humidity) && !isnan(temperature) && !isnan(soilMoisture) && !isnan(lux)) {
     //Cập nhập dữ liệu lên firebase
     Firebase.RTDB.setFloat(&firebaseData, path + "humidity", humidity);
     Firebase.RTDB.setFloat(&firebaseData, path + "light", lux);  
     Firebase.RTDB.setFloat(&firebaseData, path + "moisture", soilMoisture);
     Firebase.RTDB.setFloat(&firebaseData, path + "temperature", temperature);
-  } 
-  else {
-    Serial.println("Failed to read from DHT sensor!");
-  }
+//  } 
+//  else {
+//    Serial.println("Failed to read from DHT sensor!");
+//  }
 }
 
 //Tính thời gian tưới 
@@ -142,30 +168,29 @@ int countT( )
   // Kiểm tra giá trị độ ẩm đất để quyết định có bật hay tắt bơm nước
   Firebase.RTDB.getInt(&firebaseData, path + "low_threshold");
   low_threshold = firebaseData.to<int>();
-  Firebase.RTDB.getInt(&firebaseData, path + "high_threshold");
-  high_threshold = firebaseData.to<int>();
-    if (soilMoisture < low_threshold) {  // Giả sử ngưỡng dưới màu đất khô là 400
-      //digitalWrite(relay, HIGH);  // Bật relay
-     // delay(5000);                // Bật trong 5 giây (hoặc thời gian tưới cây mong muốn)
-      //digitalWrite(relay, LOW);   // Tắt relay sau khi tưới cây xong
-      T=5;
-    }
+ // Firebase.RTDB.getInt(&firebaseData, path + "high_threshold");
+ // high_threshold = firebaseData.to<int>();
+    if (soilMoisture < low_threshold) return 5;
     else return 0;
 } 
-/*void lcdDisplay(float t, float h, float sm, float l) {
+/*void lcdDisplay() {
   lcd.clear();
   lcd.setCursor(0, 0);
-  lcd.print("Nhiet do: ");
-  lcd.setCursor(10, 0);
-  lcd.print(round(t));
-  lcd.setCursor(0, 1);
-  lcd.print("Do am: ");
-  lcd.setCursor(10, 1);
+  lcd.print("Temp: ");
+  lcd.setCursor(5, 0);
+  lcd.print(round(temperature));
+  lcd.setCursor(8, 0);
+  lcd.print("Hum: ");
+  lcd.setCursor(12, 0);
   lcd.print(round(h));
-  lcd.setCursor(0, 2);
-  lcd.print("Do am dat: ");
-  lcd.setCursor(12, 2);
-  lcd.print(round(sm));
+  lcd.setCursor(0, 1);
+  lcd.print("Soil: ");
+  lcd.setCursor(5, 1);
+  lcd.print(round(soilMoisture));
+  lcd.setCursor(8, 1);
+  lcd.print("Lux: ");
+  lcd.setCursor(12, 1);
+  lcd.print(round(lux));
 }*/
 void setupFirebase() {
   firebaseConfig.api_key = API_KEY;
