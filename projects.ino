@@ -43,8 +43,6 @@ float lux ;
 int duration;
 BH1750 lightMeter;
 int T=0;   //thời gian tưới
-char ssid[] = "MANG DAY KTX H1-511";
-char password[] = "123456789a";
 int prev_minute=-1,prev_hour=-1;
 DHT dht(DHTPIN, DHTTYPE);
 WiFiUDP ntpUDP;
@@ -96,7 +94,6 @@ void setup() {
 }
 
 void loop() {
-
   Firebase.RTDB.getInt(&firebaseData, path + "water_mode");  //mode 1-watering automatic; mode 2-watering handle; mode 3-watering schedule
   mode = firebaseData.to<int>();
   timeClient.update();
@@ -104,7 +101,6 @@ void loop() {
   second_ = second(unix_epoch);
   if (last_second != second_)
   {
-
     minute_ = minute(unix_epoch);
     hour_ = hour(unix_epoch);
     day_ = day(unix_epoch);
@@ -129,7 +125,7 @@ void loop() {
     int minute = (Time[8] - '0') * 10 + (Time[9] - '0');
     int second = (Time[11] - '0') * 10 + (Time[12] - '0');
     int hour = (Time[5] - '0') * 10 + (Time[6] - '0');
-String hourStr = String(hour);
+  String hourStr = String(hour);
   if(minute/5 != prev_minute)
       {
         CollectData();prev_minute=minute/5;
