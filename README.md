@@ -172,7 +172,7 @@ This ensures that the more the soil is dry, the longer the irrigation.
 
 ## 📸 Screenshots & Diagrams
 
-_Add wiring diagram (Fritzing) and photos of the system here._
+(https://github.com/binphuc03/Smart-water-iot/blob/main/design_watering_system.png)
 
 ---
 
