@@ -176,16 +176,10 @@ This ensures that the more the soil is dry, the longer the irrigation.
 
 ---
 
-## 📃 License
-
-MIT License (or your preferred license)
-
----
-
 ## 🙋‍♂️ Authors
 
-- [Your Name] – Hardware & Firmware
-- [Teammate Name] – Firebase Integration & UI
+- [Phuc] – Hardware, Firmware, Firebase Integration
+- [Kien] – Firebase Integration,Web & UI
 
 ---
 
