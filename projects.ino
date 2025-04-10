@@ -10,39 +10,46 @@
 #include <WiFiManager.h>
 #include <TimeLib.h>
 
+// Firebase configuration
 #define DATABASE_URL "https://smartwater-fe007-default-rtdb.asia-southeast1.firebasedatabase.app"  // the project name address from firebase id
 #define DATABASE_SECRET "c5d5bRuTW3b0EmhxYM13DOmyiYcUoFr5tOzwxweJ"                                 // the secret key generated from firebase
 #define API_KEY "AIzaSyDgtSgrRwTQxLC75wZ0QanIoSjtg40bgwI"
 
+// Moisture thresholds for automatic mode
 int low_threshold=40;
 int high_threshold= 70;
+
+// LCD screen configuration
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 
-// Khởi tạo Firebase
+// Firebase initialization
 FirebaseConfig firebaseConfig;
 FirebaseAuth firebaseAuth;
 FirebaseData firebaseData;
 
-int mode;  //chế độ tự động
+int mode;  // Watering mode: 1 - auto, 2 - manual
 String path = "/plants/0/";
 bool signupOK = false;
 
-// DHT11 và cảm biến độ ẩm đất
+// DHT11 sensor and soil moisture pin
 #define DHTPIN 2
 #define DHTTYPE DHT11
-#define SOIL_MOISTURE_PIN 35  // Chân kết nối cảm biến độ ẩm đất
+#define SOIL_MOISTURE_PIN 35  
 
-int relay = 33;           // Chân relay cho ESP32
+int relay = 33;           // // Relay control pin for ESP32
 int max_duration = 200;   
 int water_velocity = 20;
 float humidity, temperature, soilMoisture, lux;
-int duration; //thời gian tưới
+int duration; 
 BH1750 lightMeter;
 int prev_minute=-1,prev_hour=-1;
 DHT dht(DHTPIN, DHTTYPE);
+
+// Time synchronization using NTP
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, "asia.pool.ntp.org", 25200, 60000);
 
+// Time and date strings
 char Time[] = "00:00:00 ";
 char Date[] = "00-00-2000";
 byte last_second, second_, minute_, hour_, day_, month_;
@@ -59,6 +66,7 @@ void setup() {
   pinMode(relay, OUTPUT);
   lightMeter.begin();
 
+// Auto Wi-Fi connection with WiFiManager
   WiFiManager wm;
   if(!wm.autoConnect("ESP32-WiFi-Manager","123456789"))
     {
@@ -69,12 +77,14 @@ void setup() {
 
   setupFirebase();
   timeClient.begin();
+
   Firebase.RTDB.getInt(&firebaseData, path + "updated_log_time");
   prev_hour=firebaseData.to<int>();
+
+// Get and save MAC address
   String macAddress = "";
   byte mac[6];
   WiFi.macAddress(mac);
-  
   for (int i = 0; i < 6; i++) {
     if (mac[i] < 16) {
       macAddress += "0";
@@ -90,25 +100,28 @@ void setup() {
 void loop() {
   if (WiFi.status() != WL_CONNECTED) {
         Serial.println("WiFi lost connection. Reconnecting...");
-        WiFi.begin(); // Thử kết nối lại WiFi
-        delay(5000);  // Chờ 5 giây trước khi thử lại
+        WiFi.begin(); // Trying to reconnect to WiFi
+        delay(5000);  // Wait 5 seconds before trying again
         return;
     }
 
-    // Kiểm tra kết nối Firebase
+// Test Firebase connection
     if (!Firebase.ready()) {
         Serial.println("Firebase not ready. Reconnecting...");
-        setupFirebase(); // Thiết lập lại Firebase
-        delay(5000);     // Chờ 5 giây trước khi thử lại
+        setupFirebase(); // Reset Firebase
+        delay(5000);     // Wait 5 seconds before trying again
         return;
     }
 
   Firebase.RTDB.getInt(&firebaseData, path + "water_mode");  //mode 1-watering automatic; mode 2-watering handle; mode 3-watering schedule
   mode = firebaseData.to<int>();
+
   timeClient.update();
   unsigned long unix_epoch = timeClient.getEpochTime();
   second_ = second(unix_epoch);
+
   CollectData();
+
   if (last_second != second_)
   {
     minute_ = minute(unix_epoch);
@@ -119,7 +132,7 @@ void loop() {
 
     updateTimeDisplay();
 
-    //5 phut cap nhap thong tin 1 lan
+// Update Firebase every 5 minutes
     int minute = (Time[3] - '0') * 10 + (Time[4] - '0');
     int second = (Time[6] - '0') * 10 + (Time[7] - '0');
     int hour = (Time[0] - '0') * 10 + (Time[1] - '0');
@@ -128,9 +141,12 @@ void loop() {
       {
         SendData();prev_minute=minute/5;
       }
+
+// Watering based on mode
   if (mode==1) automatic();
   else if (mode==2) handle();
 
+// Log hourly data
     FirebaseJson dayLog;
     dayLog.add("temperature", temperature);
     dayLog.add("humidity", humidity);
@@ -152,6 +168,8 @@ void loop() {
   lcdDisplay();
   delay(5000);
 }
+
+// Automatic watering mode
 void automatic() {
   duration = countT();
   if (duration > 0) {
@@ -165,6 +183,7 @@ void automatic() {
   }
 }
 
+// Manual watering mode
 void handle() {
   Firebase.RTDB.getInt(&firebaseData, path + "manual_mode/server");
   int check = firebaseData.to<int>();
@@ -179,17 +198,22 @@ void handle() {
     Firebase.RTDB.setInt(&firebaseData, path + "manual_mode/device", 0);
   }
 }
+
+// Read sensor data
 void CollectData() {
   humidity = dht.readHumidity();
   temperature = dht.readTemperature();
   int value = analogRead(SOIL_MOISTURE_PIN);
   soilMoisture = map(value, 0, 4095, 100, 0);
   lux = lightMeter.readLightLevel();
+  freeHeap = esp_get_free_heap_size();  // Get free RAM
+  cpuFreq = getCpuFrequencyMhz();// Get current CPU frequency
 }
+
+// Push sensor data to Firebase
 void SendData()
 {
   if (!isnan(humidity) && !isnan(temperature) && !isnan(soilMoisture) && !isnan(lux)) {
-    //Cập nhập dữ liệu lên firebase mới sửa float sang int của độ ẩm đất và ánh sáng
     Firebase.RTDB.setFloat(&firebaseData, path + "humidity", humidity);
     Firebase.RTDB.setInt(&firebaseData, path + "light", lux);  
     Firebase.RTDB.setInt(&firebaseData, path + "moisture", soilMoisture);
@@ -200,23 +224,26 @@ void SendData()
   }
 }
 
-//Tính thời gian tưới 
+// Calculate watering duration based on moisture
 int countT( )
 {    
-  // Kiểm tra giá trị độ ẩm đất để quyết định có bật hay tắt bơm nước
   Firebase.RTDB.getInt(&firebaseData, path + "low_threshold");
   low_threshold = firebaseData.to<int>();
   if (soilMoisture < low_threshold ) {
   Firebase.RTDB.getInt(&firebaseData, path + "high_threshold");
   high_threshold = firebaseData.to<int>();
   int threshold = (low_threshold + high_threshold) /2;
+
   Firebase.RTDB.getInt(&firebaseData, path + "max_duration");
   max_duration = firebaseData.to<int>();
-  int T = max_duration * (threshold - soilMoisture) / threshold ;          // luong nuoc can tuoi
-  return T;         //thoi gian tuoi
+
+  int T = max_duration * (threshold - soilMoisture) / threshold ;         
+  return T;        
   }
     else return 0;
 } 
+
+// Update LCD display with current values
 void lcdDisplay() {
   lcd.clear();
   lcd.setCursor(0, 0);
@@ -236,6 +263,8 @@ void lcdDisplay() {
   lcd.setCursor(7, 1);
   lcd.print(round(lux));
 }
+
+// Format and update time and date strings
 void updateTimeDisplay() {
     Time[7] = second_ % 10 + 48;
     Time[6] = second_ / 10 + 48;
@@ -251,6 +280,8 @@ void updateTimeDisplay() {
     Date[8] = (year_ / 10) % 10 + 48;
     Date[9] = year_ % 10 % 10 + 48;
 }
+
+// Connect to Firebase
 void setupFirebase() {
   firebaseConfig.api_key = API_KEY;
   firebaseConfig.database_url = DATABASE_URL;
